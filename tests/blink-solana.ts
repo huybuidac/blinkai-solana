@@ -4,7 +4,7 @@ import chaiAsPromised from 'chai-as-promised';
 import chai, { assert, expect } from 'chai';
 
 import { BlinkSolana } from '../target/types/blink_solana';
-// import { createToken } from './tests/utils'
+
 import { BN } from 'bn.js';
 import {
   createAssociatedTokenAccount,
@@ -90,7 +90,7 @@ describe('blink-solana', () => {
     it('Create Pool OK', async () => {
       await blink.methods.createPool('test', new BN(100), new BN(200)).accounts(accounts).rpc();
       const pool = await blink.account.poolAccount.fetch(getPoolAddr('test'));
-      expect(pool.userAcceptedAmount.toNumber()).to.eq(100);
+      expect(pool.userMaxAmount.toNumber()).to.eq(100);
       expect(pool.feePercent.toNumber()).to.eq(200);
     });
   });
@@ -110,7 +110,7 @@ describe('blink-solana', () => {
     it('Can not deposit by other vault', async () => {
       await mintToken(provider, mint, user2.publicKey, 1000);
       const tx = await blink.methods
-        .deposit(slug)
+        .deposit(slug, new BN(100))
         .accounts({
           authority: user1.publicKey,
           userVault: getAssociatedTokenAddressSync(mint, user2.publicKey),
@@ -120,27 +120,32 @@ describe('blink-solana', () => {
       await expect(user1.provider.sendAndConfirm(tx)).rejectedWith('Unauthorized');
     });
     it('Require token for deposit', async () => {
-      await expect(deposit(slug, user1)).rejectedWith('AccountNotInitialized');
+      await expect(deposit(slug, user1, new BN(100))).rejectedWith('AccountNotInitialized');
 
       await mintToken(provider, mint, user1.publicKey, 99);
-      await expect(deposit(slug, user1)).rejectedWith('insufficient funds');
+      await expect(deposit(slug, user1, new BN(100))).rejectedWith('insufficient funds');
     });
     it('User1 Deposit OK', async () => {
       await mintToken(provider, mint, user1.publicKey, 100);
-      await deposit(slug, user1);
+      await deposit(slug, user1, new BN(50));
 
-      const user1Acc = await getUserPoolData(slug, user1);
+      let user1Acc = await getUserPoolData(slug, user1);
+      expect(user1Acc.amount.toNumber()).to.eq(50);
+      let pool = await blink.account.poolAccount.fetch(getPoolAddr(slug));
+      expect(pool.totalAmount.toNumber()).to.eq(50);
+
+      await deposit(slug, user1, new BN(50));
+      user1Acc = await getUserPoolData(slug, user1);
       expect(user1Acc.amount.toNumber()).to.eq(100);
-
-      const pool = await blink.account.poolAccount.fetch(getPoolAddr(slug));
+      pool = await blink.account.poolAccount.fetch(getPoolAddr(slug));
       expect(pool.totalAmount.toNumber()).to.eq(100);
     });
-    it('User1 can not deposit twice', async () => {
-      await expect(deposit(slug, user1)).rejectedWith('User already deposited');
+    it('User1 can not deposit more than max amount', async () => {
+      await expect(deposit(slug, user1, new BN(1))).rejectedWith('Over max amount');
     });
     it('User2 Deposit OK', async () => {
       await mintToken(provider, mint, user2.publicKey, 100);
-      await deposit(slug, user2);
+      await deposit(slug, user2, new BN(100));
 
       const user2Acc = await getUserPoolData(slug, user2);
       expect(user2Acc.amount.toNumber()).to.eq(100);
@@ -165,8 +170,8 @@ describe('blink-solana', () => {
     it('Deposits', async () => {
       await mintToken(provider, mint, user1.publicKey, 100);
       await mintToken(provider, mint, user2.publicKey, 100);
-      await deposit(slug, user1);
-      await deposit(slug, user2);
+      await deposit(slug, user1, new BN(100));
+      await deposit(slug, user2, new BN(100));
     });
     it('User1 Withdraw OK', async () => {
       await withdraw(slug, user1);
@@ -193,7 +198,7 @@ describe('blink-solana', () => {
     });
     it('Deposit again and withdraw', async () => {
       await mintToken(provider, mint, user1.publicKey, 100);
-      await deposit(slug, user1);
+      await deposit(slug, user1, new BN(100));
       await withdraw(slug, user1);
     });
   });
@@ -211,12 +216,12 @@ async function withdraw(slug: string, user: IUser, mint?: web3.PublicKey) {
   await user.provider.sendAndConfirm(tx);
 }
 
-async function deposit(slug: string, user: IUser, mint?: web3.PublicKey) {
+async function deposit(slug: string, user: IUser, amount: anchor.BN, mint?: web3.PublicKey) {
   if (!mint) {
     const pool = await blink.account.poolAccount.fetch(getPoolAddr(slug));
     mint = pool.mint;
   }
-  const tx = await blink.methods.deposit(slug).accounts({
+  const tx = await blink.methods.deposit(slug, amount).accounts({
     authority: user.publicKey,
     userVault: getAssociatedTokenAddressSync(mint, user.publicKey),
     tokenProgram: TOKEN_PROGRAM_ID,

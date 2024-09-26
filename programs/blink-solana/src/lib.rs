@@ -5,7 +5,7 @@ use anchor_spl::{
 };
 use std::mem::size_of;
 
-declare_id!("FsXSdTn8whuMgCk93P1yHDUBy3xzPtrknnWx3YgWJ2VK");
+declare_id!("DxUAH8uUQigjfCxoSygWNaqfktzrCYWshxa4KsCMihK5");
 
 pub const STATE: &str = "state";
 pub const POOL: &str = "pool";
@@ -29,12 +29,12 @@ pub mod blink_solana {
     pub fn create_pool(
         ctx: Context<CreatePool>,
         slug: String,
-        user_accepted_amount: u64,
+        user_max_amount: u64,
         fee: u64
     ) -> Result<()> {
         require!(slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'), AppErrorCode::InvalidSlug);
         // require!(slug.len() <= SLUG_LENGTH, AppErrorCode::InvalidSlug); // no need to check
-        require!(user_accepted_amount > 0, AppErrorCode::InvalidAcceptedAmount);
+        require!(user_max_amount > 0, AppErrorCode::InvalidAcceptedAmount);
         require!(fee <= _100_PERCENT, AppErrorCode::InvalidFeePercent);
 
         let mut pool = ctx.accounts.pool.load_init()?;
@@ -43,7 +43,7 @@ pub mod blink_solana {
         pool.mint = ctx.accounts.mint.key();
         pool.slug = str_to_slug(&slug);
 
-        pool.user_accepted_amount = user_accepted_amount;
+        pool.user_max_amount = user_max_amount;
         pool.fee_percent = fee;
         pool.vault = ctx.accounts.vault.key();
         pool.fee_vault = ctx.accounts.fee_vault.key();
@@ -51,7 +51,7 @@ pub mod blink_solana {
         Ok(())
     }
 
-    pub fn deposit(_ctx: Context<Deposit>, _slug: String) -> Result<()> {
+    pub fn deposit(_ctx: Context<Deposit>, _slug: String, _amount: u64) -> Result<()> {
         let mut pool = _ctx.accounts.pool.load_mut()?;
         let mut user_pool = match _ctx.accounts.user_pool.load_mut() {
             Ok(user_pool) => user_pool,
@@ -63,7 +63,7 @@ pub mod blink_solana {
             }
         };
 
-        require_eq!(user_pool.amount, 0, AppErrorCode::Deposited);
+        require!(user_pool.amount + _amount <= pool.user_max_amount, AppErrorCode::OverMaxAmount);
 
         token_interface::transfer_checked(
             CpiContext::new(_ctx.accounts.token_program.to_account_info(), TransferChecked {
@@ -72,12 +72,12 @@ pub mod blink_solana {
                 authority: _ctx.accounts.authority.to_account_info(),
                 mint: _ctx.accounts.mint.to_account_info(),
             }),
-            pool.user_accepted_amount,
+            _amount,
             _ctx.accounts.mint.decimals
         )?;
 
-        user_pool.amount = pool.user_accepted_amount;
-        pool.total_amount += pool.user_accepted_amount;
+        user_pool.amount += _amount;
+        pool.total_amount += _amount;
 
         Ok(())
     }
@@ -262,7 +262,7 @@ pub struct PoolAccount {
     pub vault: Pubkey,
     pub fee_vault: Pubkey,
     pub slug: [u8; SLUG_LENGTH],
-    pub user_accepted_amount: u64, // fixed amount - Accept X amount of token despoit by any user
+    pub user_max_amount: u64, // fixed amount - Accept X amount of token despoit by any user
     pub total_amount: u64,
     pub fee_percent: u64, // decimal 2
     pub fee_amount: u64,
@@ -283,8 +283,8 @@ pub enum AppErrorCode {
     InvalidAcceptedAmount,
     #[msg("Invalid fee percent")]
     InvalidFeePercent,
-    #[msg("User already deposited")]
-    Deposited,
+    #[msg("Over max amount")]
+    OverMaxAmount,
     #[msg("User not deposited")]
     NotDeposited,
     #[msg("Invalid vault")]

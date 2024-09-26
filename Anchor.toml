@@ -5,7 +5,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-blink_solana = "FsXSdTn8whuMgCk93P1yHDUBy3xzPtrknnWx3YgWJ2VK"
+blink_solana = "DxUAH8uUQigjfCxoSygWNaqfktzrCYWshxa4KsCMihK5"
 
 [registry]
 url = "https://api.apr.dev"
