@@ -35,7 +35,12 @@ Simple Token Vault
    anchor keys sync
    ```
 
-3. Deploy the program
+3. Test the program
+   ```
+   anchor test
+   ```
+
+4. Deploy the program
    ```
    yarn deploy:test
    ```
