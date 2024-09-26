@@ -61,3 +61,12 @@ Simple Token Vault
 
 3. Create Mint (if needed)
    - See `scripts/create-mint.ts` for details on token creation and minting
+
+## Account Structures
+
+- StateAccount: manages some global state (if any)
+- PoolAccount: 
+  - each pool has a unique slug (max 32 characters)
+  - stores information about authority, mint, fee, user max amount
+- UserPoolAccount:
+  - stores user information for each pool
